@@ -11,8 +11,7 @@ checkpoints/
 # Data files (large)
 data/
 
-# Results (generated)
-results/
+
 
 # macOS
 .DS_Store
