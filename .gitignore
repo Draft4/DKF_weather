@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# Checkpoints / Model weights (large files)
+checkpoints/
+*.pth
+
+# Data files (large)
+data/
+
+# Results (generated)
+results/
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/

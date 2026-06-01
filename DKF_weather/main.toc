@@ -1,0 +1,7 @@
+\beamer@sectionintoc {1}{项目背景与动机}{3}{0}{1}
+\beamer@sectionintoc {2}{DKF 核心架构}{6}{0}{2}
+\beamer@sectionintoc {3}{数学建模与网络设计}{9}{0}{3}
+\beamer@sectionintoc {4}{训练与预测：两种运行模式}{12}{0}{4}
+\beamer@sectionintoc {5}{数据与实现细节}{15}{0}{5}
+\beamer@sectionintoc {6}{总结}{18}{0}{6}
+\beamer@sectionintoc {7}{存在的问题}{20}{0}{7}

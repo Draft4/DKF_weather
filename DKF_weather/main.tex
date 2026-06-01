@@ -1,0 +1,470 @@
+\documentclass[10pt,aspectratio=1610]{beamer}
+\usepackage{ucas}
+\usepackage{ctex}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, calc}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{booktabs}
+
+% 自定义颜色
+\definecolor{myblue}{RGB}{23, 73, 148}
+\definecolor{myorange}{RGB}{230, 126, 34}
+\definecolor{mygreen}{RGB}{39, 174, 96}
+\definecolor{myred}{RGB}{192, 57, 43}
+\definecolor{lightgray}{RGB}{245, 245, 245}
+
+\title{基于深度卡尔曼滤波的时空降水预测}
+\subtitle{Deep Kalman Filtering for Spatiotemporal Precipitation Forecasting}
+\author{
+    \href{mailto:dongruifeng25@mails.ucas.ac.cn}{董锐锋}
+}
+\institute{Institute of Optics and Electronics, Chinese Academy of Sciences }
+
+\date{\today}
+
+\begin{document}
+
+% ==============================================================================
+% 标题页
+% ==============================================================================
+\maketitle
+
+% ==============================================================================
+% 目录
+% ==============================================================================
+\begin{frame}{目录}
+    \tableofcontents
+\end{frame}
+
+% ==============================================================================
+% 第一部分：项目背景与动机
+% ==============================================================================
+\section{项目背景与动机}
+
+\begin{frame}{为什么降水预测这么难？}
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{大气的本质：}
+            \begin{itemize}
+                \item 极度复杂的\alert{非线性混沌系统}
+                \item 地表观测只是\alert{表象}（Symptoms）
+                \item 真正的驱动力是三维大气内部的物理状态
+            \end{itemize}
+            \vspace{0.5cm}
+            \textbf{传统方法的困境：}
+            \begin{itemize}
+                \item 端到端映射：$X_t \rightarrow X_{t+1}$
+                \item 神经网络容易输出\alert{平均值}
+                \item 预测结果边缘模糊，丧失物理锐度
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \begin{tikzpicture}[scale=0.8, transform shape,
+                    box/.style={draw, rounded corners, minimum width=2.5cm, minimum height=0.8cm, align=center}]
+                \node[box, fill=myorange!20] (xt) at (0,0) {$X_t$\\地表观测};
+                \node[box, fill=myblue!20] (nn) at (0,-2) {黑盒神经网络};
+                \node[box, fill=myorange!20] (xt1) at (0,-4) {$\hat{X}_{t+1}$\\模糊预测};
+                \draw[-{Stealth}] (xt) -- (nn);
+                \draw[-{Stealth}] (nn) -- (xt1);
+                \node[draw, dashed, fit=(xt)(nn)(xt1), inner sep=10pt, label={above:\textbf{端到端预测}}] {};
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{DKF 的破局之道：引入“隐状态”}
+    \begin{block}{核心思想：状态空间模型 (State Space Model)}
+        假设存在一个无法直接测量的\alert{隐状态 $Z_t$}，它代表了大气的真实三维物理画像。
+    \end{block}
+    \vspace{0.3cm}
+    \begin{center}
+        \begin{tikzpicture}[scale=0.9, transform shape,
+                box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.9cm, align=center}]
+            % 传统思路
+            \node[box, fill=myorange!20] (xt1) at (-4,0) {$X_t$};
+            \node[box, fill=myorange!20] (xt2) at (-4,-2) {$X_{t+1}$};
+            \draw[-{Stealth}, thick] (xt1) -- (xt2) node[midway, right] {直接映射};
+            \node at (-4, 1) {\textbf{常规思路}};
+
+            % DKF 思路
+            \node[box, fill=myblue!20] (zt) at (2,0) {$Z_t$\\物理状态};
+            \node[box, fill=myblue!20] (zt1) at (2,-2) {$Z_{t+1}$\\物理状态};
+            \node[box, fill=myorange!20] (xt_dkf) at (5,0) {$X_t$\\观测};
+            \node[box, fill=myorange!20] (xt1_dkf) at (5,-2) {$X_{t+1}$\\观测};
+
+            \draw[-{Stealth}, thick, myblue] (zt) -- (zt1) node[midway, left] {物理演变};
+            \draw[-{Stealth}, thick, mygreen] (zt) -- (xt_dkf) node[midway, above] {解码};
+            \draw[-{Stealth}, thick, mygreen] (zt1) -- (xt1_dkf) node[midway, above] {解码};
+            \node at (3.5, 1) {\textbf{DKF 思路}};
+        \end{tikzpicture}
+    \end{center}
+    \vspace{0.3cm}
+    \begin{itemize}
+        \item \textbf{解耦}：将特征提取和物理演变分开
+        \item \textbf{物理约束}：强制模型在隐空间中构建符合物理直觉的天气系统
+    \end{itemize}
+\end{frame}
+
+% ==============================================================================
+% 第二部分：DKF 核心架构
+% ==============================================================================
+\section{DKF 核心架构}
+
+\begin{frame}{四大核心模块：大楼与脚手架}
+    为了实现上述思路，我们将模型拆分为四个相互配合的子网络：
+    \vspace{0.3cm}
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \begin{block}{A. 物理引擎（承重墙）}
+                \textbf{1. 状态转移网络 (Prior)}
+                \begin{itemize}
+                    \item 输入：$Z_{t-1}$
+                    \item 输出：$Z_t$ 分布
+                    \item 意义：纯粹的动力学推演
+                \end{itemize}
+                \textbf{2. 观测解码网络 (Emission)}
+                \begin{itemize}
+                    \item 输入：$Z_t$
+                    \item 输出：$\hat{X}_t$
+                    \item 意义：将物理状态映射到地表观测
+                \end{itemize}
+            \end{block}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{alertblock}{B. 校准工具（脚手架）}
+                \textbf{3. 特征编码器 (Encoder)}
+                \begin{itemize}
+                    \item 输入：真实观测 $X_t$
+                    \item 输出：降维特征向量
+                    \item 意义：压缩地表网格数据
+                \end{itemize}
+                \textbf{4. 后验推断网络 (Inference)}
+                \begin{itemize}
+                    \item 输入：$Z_{t-1}$ + 编码后的 $X_t$
+                    \item 输出：校准后的 $Z_t$
+                    \item 意义：利用真实观测修正预测
+                \end{itemize}
+            \end{alertblock}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{架构全景图}
+    \begin{center}
+        \begin{tikzpicture}[scale=0.75, transform shape,
+            box/.style={draw, rounded corners, minimum width=2.2cm, minimum height=0.7cm, align=center, font=\small},
+            arrow/.style={-{Stealth}, thick}]
+
+            % 输入
+            \node[box, fill=myorange!20] (xt) at (0,0) {$X_t$};
+            \node[box, fill=myblue!20] (zt_prev) at (0,-2.5) {$Z_{t-1}$};
+
+            % 编码器
+            \node[box, fill=mygreen!20] (enc) at (3,0) {特征\\编码器};
+            \draw[arrow] (xt) -- (enc);
+
+            % 推断网络
+            \node[box, fill=myred!20] (inf) at (6,-1.25) {后验推断\\$q_\phi$};
+            \draw[arrow] (enc) -- (inf);
+            \draw[arrow] (zt_prev) -- (inf);
+
+            % 状态转移
+            \node[box, fill=myblue!40] (trans) at (3,-2.5) {状态转移\\$p_\theta$};
+            \draw[arrow] (zt_prev) -- (trans);
+
+            % 输出分布
+            \node[box, fill=myblue!20] (z_post) at (9,-0.5) {$Z_t \sim q_\phi$};
+            \node[box, fill=myblue!20] (z_prior) at (9,-2) {$Z_t \sim p_\theta$};
+            \draw[arrow] (inf) -- (z_post);
+            \draw[arrow] (trans) -- (z_prior);
+
+            % 解码器
+            \node[box, fill=mygreen!20] (dec) at (12,-1.25) {观测解码};
+            \draw[arrow] (z_post) -- (dec);
+            \draw[arrow] (z_prior) -- (dec);
+
+            % 输出
+            \node[box, fill=myorange!20] (xt_hat) at (14.5,-1.25) {$\hat{X}_t$};
+            \draw[arrow] (dec) -- (xt_hat);
+
+            % KL 散度
+            \draw[<->, thick, myred, dashed] (z_post) -- (z_prior) node[midway, right] {KL};
+
+            % 图例
+            \node[box, fill=myorange!20, minimum width=1cm] at (0,-4.5) {};
+            \node[right] at (1.2,-4.5) {观测};
+            \node[box, fill=myblue!20, minimum width=1cm] at (3,-4.5) {};
+            \node[right] at (4.2,-4.5) {隐状态};
+            \node[box, fill=mygreen!20, minimum width=1cm] at (6,-4.5) {};
+            \node[right] at (7.2,-4.5) {编解码};
+            \node[box, fill=myred!20, minimum width=1cm] at (9.5,-4.5) {};
+            \node[right] at (10.7,-4.5) {推断/校准};
+        \end{tikzpicture}
+    \end{center}
+\end{frame}
+
+% ==============================================================================
+% 第三部分：数学建模
+% ==============================================================================
+\section{数学建模与网络设计}
+
+\begin{frame}{隐马尔可夫结构与变分推断}
+    \begin{block}{生成模型 $p_\theta$（物理引擎）}
+        \begin{align}
+            p_\theta(Z_t | Z_{t-1}) & = \mathcal{N}(\mu_{pt}, \Sigma_{pt}) \quad \text{(状态转移)} \\
+            p_\theta(X_t | Z_t)     & = \text{Decoder}(Z_t) \quad \text{(观测解码)}
+        \end{align}
+    \end{block}
+    \begin{alertblock}{识别网络 $q_\phi$（校准工具）}
+        \begin{equation}
+            q_\phi(Z_t | X_{t},Z_{t-1}) = \mathcal{N}(\mu_{qt}, \Sigma_{qt})
+        \end{equation}
+        采用严格因果的 \textbf{q-RNN} 结构，从观测序列中提取纯净隐状态轨迹。
+    \end{alertblock}
+\end{frame}
+
+% \begin{frame}{重参数化技巧}
+%     为了让随机采样过程可导，实现端到端反向传播：
+%     \begin{equation}
+%         \hat{Z}_t = \mu_{qt} + \epsilon \odot \sqrt{\exp(\log \Sigma_{qt})}, \quad \epsilon \sim \mathcal{N}(0, I)
+%     \end{equation}
+%     \vspace{0.3cm}
+%     \begin{center}
+%         \begin{tikzpicture}[scale=0.9, transform shape,
+%                 box/.style={draw, rounded corners, minimum width=2.5cm, minimum height=0.8cm, align=center}]
+%             \node[box, fill=myblue!20] (mu) at (0,0) {$\mu_{qt}$};
+%             \node[box, fill=myblue!20] (sigma) at (0,-1.5) {$\Sigma_{qt}$};
+%             \node[box, fill=lightgray] (eps) at (3,0) {$\epsilon \sim \mathcal{N}(0,I)$};
+%             \node[circle, draw, fill=mygreen!20] (mul) at (3,-1.5) {$\times$};
+%             \node[circle, draw, fill=mygreen!20] (add) at (5.5,-0.75) {$+$};
+%             \node[box, fill=myblue!40] (z) at (7.5,-0.75) {$\hat{Z}_t$};
+
+%             \draw[-{Stealth}] (mu) -- (add);
+%             \draw[-{Stealth}] (sigma) -- (mul);
+%             \draw[-{Stealth}] (eps) -- (mul);
+%             \draw[-{Stealth}] (mul) -- (add);
+%             \draw[-{Stealth}] (add) -- (z);
+%         \end{tikzpicture}
+%     \end{center}
+% \end{frame}
+
+\begin{frame}{损失函数：变分下界 (ELBO)}
+    优化目标为最大化 ELBO，即最小化以下两项之和：
+    \begin{equation}
+        \mathcal{L} = \underbrace{|| \hat{X}_t - X_t ||_{2}^{2}}_{\text{重构误差 (Reconstruction Loss)}} + \underbrace{D_{KL}(q_\phi(Z_t|X_{t},Z_{t-1}) \| p_\theta(Z_t|Z_{t-1}))}_{\text{KL 散度}}
+    \end{equation}
+    \vspace{0.3cm}
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \textbf{1. 重构误差}
+            \begin{itemize}
+                \item 计算 $\hat{X}_t$ 与 $X_t$ 的 MSE
+                \item 降水通道可加动态权重缓解数据不平衡
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{2. KL 散度}
+            \begin{itemize}
+                \item 衡量后验与先验的差异
+                \item \alert{严禁采样}，使用对角高斯闭式解析解
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ==============================================================================
+% 第四部分：训练与预测
+% ==============================================================================
+\section{训练与预测：两种运行模式}
+
+\begin{frame}{训练阶段：双轨并行的校对}
+    在训练时，我们拥有完整的天气记录，采用“教师-学生”机制：
+    \vspace{0.3cm}
+    \begin{enumerate}
+        \item \textbf{后验推断（教师/标准答案）}：
+              \begin{itemize}
+                  \item 利用脚手架（推断网络 $q_\phi$）
+                  \item 结合真实观测 $X_t$，提取准确的隐状态轨迹
+              \end{itemize}
+        \item \textbf{先验预测（学生/做题）}：
+              \begin{itemize}
+                  \item 让状态转移网络 $p_\theta$ 自己根据 $Z_{t-1}$ 推演 $Z_t$
+              \end{itemize}
+        \item \textbf{计算 KL 散度（纠正错误）}：
+              \begin{itemize}
+                  \item 强迫状态转移网络学习到真实的大气动力学规律
+              \end{itemize}
+    \end{enumerate}
+    \vspace{0.3cm}
+    \begin{block}{核心逻辑}
+        推断网络 $q_\phi$ 提供\alert{监督信号}，引导生成网络 $p_\theta$ 学习物理规律。
+    \end{block}
+\end{frame}
+
+\begin{frame}{预测阶段：滚动预测 (Rolling Forecast)}
+    预测阶段并非完全“盲飞”，而是\alert{滚动推进}：当时间来到 $t+1$ 时，真实的 $X_{t+1}$ 已经可获取，我们利用它来校准隐状态，再预测下一步。
+    \vspace{0.3cm}
+    \begin{columns}
+        \begin{column}{0.4\textwidth}
+            \textbf{单步流程（以 $t \rightarrow t+1$ 为例）：}
+            \begin{enumerate}
+                \item 利用真实观测 $X_t$ 和上一时刻 $Z_{t-1}$
+                \item 通过\alert{推断网络} $q_\phi$ 得到校准后的 $Z_t$
+                \item 通过\alert{先验网络} $p_\theta$ 预测 $Z_{t+1}$
+                \item 通过解码器得到 $\hat{X}_{t+1}$
+            \end{enumerate}
+            \vspace{0.3cm}
+            \textbf{下一步：}
+            \begin{itemize}
+                \item 获取真实 $X_{t+1}$
+                \item 用 $X_{t+1}$ 和 $Z_t$ 推断 $Z_{t+1}$
+                \item 再预测 $Z_{t+2}$，以此类推……
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.6\textwidth}
+            \begin{tikzpicture}[scale=0.75, transform shape,
+                box/.style={draw, rounded corners, minimum width=1.8cm, minimum height=0.6cm, align=center, font=\small},
+                arrow/.style={-{Stealth}, thick}]
+                % 第一行: t
+                \node[box, fill=myorange!20] (xt) at (0,0) {$X_t$};
+                \node[box, fill=myblue!20] (zt_prev) at (0,-1.5) {$Z_{t-1}$};
+                \node[box, fill=myred!20] (inf1) at (2.5,-0.75) {$q_\phi$};
+                \node[box, fill=myblue!40] (zt) at (5,-0.75) {$Z_t$};
+                \draw[arrow] (xt) -- (inf1);
+                \draw[arrow] (zt_prev) -- (inf1);
+                \draw[arrow] (inf1) -- (zt);
+
+                % 第二行: t -> t+1
+                \node[box, fill=myblue!40] (pt1) at (2.5,-2.5) {$p_\theta$};
+                \node[box, fill=myblue!20] (zt1) at (5,-2.5) {$Z_{t+1}$};
+                \node[box, fill=mygreen!20] (dec1) at (7.5,-2.5) {Decoder};
+                \node[box, fill=myorange!20] (xt1_hat) at (10,-2.5) {$\hat{X}_{t+1}$};
+                \draw[arrow] (zt) -- (pt1);
+                \draw[arrow] (pt1) -- (zt1);
+                \draw[arrow] (zt1) -- (dec1);
+                \draw[arrow] (dec1) -- (xt1_hat);
+
+                % 第三行: t+1
+                \node[box, fill=myorange!20] (xt1) at (0,-4) {$X_{t+1}$};
+                \node[box, fill=myred!20] (inf2) at (2.5,-4) {$q_\phi$};
+                \node[box, fill=myblue!40] (zt1_post) at (5,-4) {$Z_{t+1}$};
+                \draw[arrow] (xt1) -- (inf2);
+                \draw[arrow] (zt) -- (inf2);
+                \draw[arrow] (inf2) -- (zt1_post);
+
+                % 第四行: t+1 -> t+2
+                \node[box, fill=myblue!40] (pt2) at (2.5,-5.5) {$p_\theta$};
+                \node[box, fill=myblue!20] (zt2) at (5,-5.5) {$Z_{t+2}$};
+                \node[box, fill=mygreen!20] (dec2) at (7.5,-5.5) {Decoder};
+                \node[box, fill=myorange!20] (xt2_hat) at (10,-5.5) {$\hat{X}_{t+2}$};
+                \draw[arrow] (zt1_post) -- (pt2);
+                \draw[arrow] (pt2) -- (zt2);
+                \draw[arrow] (zt2) -- (dec2);
+                \draw[arrow] (dec2) -- (xt2_hat);
+
+                % 标注
+                \node[right, font=\footnotesize\color{myred}] at (10.5,-0.75) {校准};
+                \node[right, font=\footnotesize\color{myblue}] at (10.5,-2.5) {预测};
+                \node[right, font=\footnotesize\color{myred}] at (10.5,-4) {校准};
+                \node[right, font=\footnotesize\color{myblue}] at (10.5,-5.5) {预测};
+            \end{tikzpicture}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ==============================================================================
+% 第五部分：数据与实现细节
+% ==============================================================================
+\section{数据与实现细节}
+
+\begin{frame}{数据集与预处理}
+    \textbf{数据集：} WeatherBench (低分辨率 5.625° 或 2.8125°)
+    \vspace{0.3cm}
+    \begin{table}
+        \centering
+        \begin{tabular}{@{}lll@{}}
+            \toprule
+            \textbf{通道} & \textbf{变量}  & \textbf{预处理}   \\
+            \midrule
+            1           & 2米温度         & Z-score 标准化    \\
+            2           & 10米U向风速      & Z-score 标准化    \\
+            3           & 10米V向风速      & Z-score 标准化    \\
+            4           & \alert{总降水量} & $\log(1+x)$ 变换 \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+    \vspace{0.3cm}
+    \begin{alertblock}{降水预处理的重要性}
+        降水数据极度稀疏且呈长尾分布，直接使用原始值会导致梯度爆炸或消失。$\log(1+x)$ 能稳定梯度反向传播。
+    \end{alertblock}
+\end{frame}
+
+\begin{frame}{网络实现要点}
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \textbf{空间结构保留}
+            \begin{itemize}
+                \item 所有核心序列模块使用 \textbf{ConvLSTM} 或 \textbf{ConvGRU}
+                \item 替代全连接 LSTM，保留二维空间拓扑
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{解码器设计}
+            \begin{itemize}
+                \item 堆叠 \texttt{ConvTranspose2d} 进行空间上采样
+                \item 温、风通道：线性激活
+                \item 降水通道：\texttt{Softplus/ReLU} 确保非负
+            \end{itemize}
+            \vspace{0.3cm}
+            \textbf{关键约束}
+            \begin{itemize}
+                \item KL 散度必须\alert{解析计算}，禁止蒙特卡洛采样
+                \item 训练/预测模式通过 \texttt{self.training} 严格区分
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ==============================================================================
+% 第六部分：总结
+% ==============================================================================
+\section{总结}
+
+\begin{frame}{为什么选择 DKF？}
+    \begin{block}{DKF 的本质优势}
+        DKF 并非简单堆砌数学公式，而是用深度学习\alert{重构了经典的大气系统动力学建模过程}。
+    \end{block}
+    \vspace{0.3cm}
+    \begin{columns}
+        \begin{column}{0.48\textwidth}
+            \textbf{相比黑盒模型：}
+            \begin{itemize}
+                \item 引入物理可解释的隐状态
+                \item 解耦特征提取与动力学演变
+                \item 预测结果保留物理锐度
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \textbf{相比传统卡尔曼滤波：}
+            \begin{itemize}
+                \item 利用神经网络学习非线性转移/观测函数
+                \item 无需手动设计复杂的状态转移矩阵
+                \item 通过变分推断处理高维时空数据
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    \vspace{0.5cm}
+    \begin{center}
+        \textbf{目标：} 构建一个既懂深度学习，又尊重大气物理规律的降水预测系统。
+    \end{center}
+\end{frame}
+
+\section{存在的问题}
+\begin{frame}
+    \frametitle{数据集问题}
+    \begin{itemize}
+        \item 之前的两篇文献的数据集（HKO-7）雷达图像需要邮件联系作者获得 https://github.com/sxjscience/HKO-7
+        \item 开源的数据集有 WeatherBench，但是其数据量非常大，完整的数据达到 TB 级别，因此若要使用，只能下载低分辨率的部分数据（如风速，气温和降水量），若要进行降水量预测，仅使用气温和风速是否有效？
+    \end{itemize}
+\end{frame}
+\end{document}

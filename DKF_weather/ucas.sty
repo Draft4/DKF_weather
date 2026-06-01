@@ -1,0 +1,256 @@
+\ProvidesPackage{ucas}[2023/06/18 Beamer Theme for UCAS by Shing-Ho Jonathan Lin.]
+
+% ================================================================================
+% Packages
+% ================================================================================
+
+\RequirePackage{tikz}
+\RequirePackage{xcolor}
+\RequirePackage{amsthm,amsmath,amssymb,bm,mathrsfs,bbm,amsfonts}
+\RequirePackage{verbatim}
+\RequirePackage{hyperref}
+\RequirePackage{listings}
+\RequirePackage{pifont}
+\RequirePackage[utf8]{inputenc} % allow utf-8 input
+\RequirePackage[T1]{fontenc}    % use 8-bit T1 fonts
+\RequirePackage{url}            % simple URL typesetting
+\RequirePackage{booktabs}       % professional-quality tables
+\RequirePackage{amsfonts}       % blackboard math symbols
+\RequirePackage{nicefrac}       % compact symbols for 1/2, etc.
+\RequirePackage{microtype}      % microtypography
+\RequirePackage{xcolor}         % colors
+\RequirePackage{float}
+\RequirePackage{makecell}
+\RequirePackage[ruled, vlined]{algorithm2e}
+\RequirePackage{algpseudocode}
+\RequirePackage{graphicx}
+\RequirePackage{subcaption}
+
+% ================================================================================
+% Color Accents
+% ================================================================================
+
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\lstset{numbers=left,breaklines,
+	numberstyle= \tiny,keywordstyle= \color{ blue!70},commentstyle=\color{red!50!green!50!blue!50},
+	frame=shadowbox, rulesepcolor= \color{ red!20!green!20!blue!20},
+	escapeinside=``}
+
+\definecolor{ucasblue}{RGB}{23, 73, 148}
+\definecolor{skyblue}{HTML}{6BA4B8}
+
+\setbeamercolor{title}{fg=white}
+\setbeamercolor{author}{fg=white}
+\setbeamercolor{affiliation}{fg=white}
+\setbeamercolor{date}{fg=white}
+\setbeamercolor{head}{bg=ucasblue}
+
+\setbeamercolor{alerted text}{fg=ucasblue}
+\setbeamercolor{normal text}{fg=darkgray,bg=white}
+\setbeamercolor{structure}{fg=ucasblue}
+
+\setbeamercolor{jumbo}{bg=ucasblue}
+\setbeamercolor{progress bar}{fg=ucasblue}
+\setbeamercolor{progress bar progress}{use=progress bar,bg=progress bar.fg}
+
+\hypersetup{
+	colorlinks,
+	linkcolor=ucasblue,
+	anchorcolor=red,
+	citecolor=blue!80,
+	urlcolor=skyblue,
+}
+
+%\setbeamercolor{block title}{fg=airforceblue,bg=morelightgray}
+%\setbeamercolor{block body}{fg=darkgray,bg=morelightgray}
+
+% ================================================================================
+% Fonts
+% ================================================================================
+
+\setbeamerfont{author}{size=\small}
+\setbeamerfont{affiliation}{size=\small}
+\setbeamerfont{date}{size=\footnotesize}
+\setbeamerfont{title}{series=\bfseries, size=\Large}
+\setbeamerfont{subtitle}{series=\mdseries,size=\normalsize}
+
+\setbeamerfont{frametitle}{series=\bfseries}
+\setbeamerfont{framesubtitle}{series=\mdseries}
+\setbeamerfont{footline}{size=\scriptsize}
+\setbeamerfont{block title}{series=\centering, size=\small}
+\setbeamerfont{block body}{size=\scriptsize}
+
+\usefonttheme{serif}
+
+% ================================================================================
+% Basic Settings
+% ================================================================================
+
+% cancel navigation symbols
+\setbeamertemplate{navigation symbols}{}
+
+% prettier boxes
+\setbeamertemplate{blocks}[rounded]
+
+% bullet points
+\setbeamertemplate{itemize item}{\textbullet}
+\setbeamertemplate{itemize subitem}{\textemdash}
+\setbeamertemplate{itemize subsubitem}{\ensuremath{\circ}}
+
+% paragraph spacing
+\setlength{\parskip}{10pt}
+
+% code environment
+\lstdefinestyle{mystyle}{
+	commentstyle=\color{skyblue},
+	keywordstyle=\color{magenta},
+	numberstyle=\tiny\color{gray},
+	stringstyle=\color{codepurple},
+	basicstyle=\ttfamily\scriptsize,
+	breakatwhitespace=false,
+	breaklines=true,
+	captionpos=b,
+	keepspaces=true,
+	numbers=left,
+	numbersep=5pt,
+	showspaces=false,
+	showstringspaces=false,
+	showtabs=false,
+	tabsize=4,
+	xleftmargin=10pt,
+	xrightmargin=10pt,
+}
+\lstset{style=mystyle}
+
+% ================================================================================
+% Slide Templates
+% ================================================================================
+
+% headline for all frames
+\setbeamertemplate{headline}{
+	\ifnum\theframenumber=1
+		% not display the headline for the title page
+	\else
+		\begin{beamercolorbox}[wd=\paperwidth,ht=40pt]{head}
+			\hspace{410pt}\includegraphics[width=40pt]{source/ucas_logo_white.png}
+		\end{beamercolorbox}
+	\fi
+}
+
+% frame title and subtitle
+\setbeamertemplate{frametitle}{
+	\begin{picture}(0,0)
+		\ifx\insertframesubtitle\@empty%
+			\put(0,25){\usebeamerfont{frametitle}\usebeamercolor[fg]{title}\insertframetitle}%
+		\else%
+			\put(0,32){\usebeamerfont{frametitle}\usebeamercolor[fg]{title} \insertframetitle}%
+			\put(2,19){\usebeamerfont{framesubtitle}\usebeamercolor[fg]{title} \insertframesubtitle }
+		\fi
+	\end{picture}
+}
+
+% title page
+\setbeamertemplate{title page}{
+	\begin{picture}(0,0)
+		\put(0,80){\includegraphics[width=140pt]{source/ucas_logo_name.png}}
+		\put(375,75){\includegraphics[width=40pt]{source/IOE_logo.png}}
+		% put your institute logo here, CASIA is just for demo
+		\put(-5,-75){
+			\begin{beamercolorbox}[wd=1.1\paperwidth,ht=140pt]{jumbo}
+			\end{beamercolorbox}
+		}
+		\put(280,-72){\includegraphics[width=135pt]{source/ucas_logo_white.png}}
+		% \put(0,-115){\includegraphics[width=70pt]{source/ucas_logo_caligraphy.png}}
+		% \put(100,-120){\includegraphics[width=80pt]{source/ucas_logo_motto.png}}
+		\put(0,25){
+			\begin{minipage}{300pt}
+				\usebeamerfont{title}\usebeamercolor[fg]{title}\inserttitle\par
+				\vspace{10pt}
+				\usebeamerfont{subtitle}\usebeamercolor[fg]{subtitle}\insertsubtitle
+			\end{minipage}
+		}
+		\put(0,-45){%
+			\begin{minipage}{300pt}
+				\usebeamerfont{author}\usebeamercolor[fg]{author}\insertauthor\par
+				\usebeamerfont{institute}\usebeamercolor[fg]{institute}\insertinstitute
+				\vspace{10pt}
+			\end{minipage}
+			% \usebeamerfont{author}\usebeamercolor[fg]{author}\insertauthor
+		}
+		\put(0,-60){%
+			\usebeamerfont{date}\usebeamercolor[fg]{date}\insertdate
+		}
+	\end{picture}
+}
+
+% \begin{beamercolorbox}[wd=0.9\textwidth,sep=10pt,leftskip=8mm]{title}
+%     {\usebeamerfont{title}\inserttitle}
+
+%     {\usebeamerfont{subtitle}\insertsubtitle}
+
+%     {\usebeamerfont{author}\usebeamercolor[fg]{author}\insertauthor}
+
+%     {\usebeamerfont{date}\usebeamercolor[fg]{date}\insertdate}
+% \end{beamercolorbox}
+
+\defbeamertemplate{footline}{progress bar}{
+	\dimen0=\paperwidth
+	\multiply\dimen0 by \insertframenumber
+	\divide\dimen0 by \inserttotalframenumber
+	\edef\progressbarwidth{\the\dimen0}
+	\leavevmode%
+	\ifnum\theframenumber=1
+	\else
+		\begin{beamercolorbox}[wd=\paperwidth,ht=2pt,dp=1pt]{progress bar}
+			\begin{beamercolorbox}[wd=\progressbarwidth,ht=2pt,dp=1pt]{progress bar progress}
+			\end{beamercolorbox}%
+			% \usebeamerfont{footline}\insertframenumber
+		\end{beamercolorbox}%
+	\fi
+}
+
+\setbeamertemplate{footline}[progress bar]
+
+% style of sections and subsections in ToCs
+\setbeamertemplate{section in toc}{
+	$\blacktriangleright$~\inserttocsection
+}
+\setbeamertemplate{subsection in toc}{\hspace{1.5em}$\triangleright$~\inserttocsubsection}
+\setbeamertemplate{frametitle continuation}{}
+
+% begin of sections
+\AtBeginSection[]
+{
+	\begingroup
+	\begin{frame}{Contents}{}
+		\begin{picture}(0,0)
+			\put(-28.5,-143){\includegraphics[width=\paperwidth]{source/background1.png}}
+			% we offer 5 options for background
+			% if you want the box to be set in center, use -143, if not, use -137 in \put()
+		\end{picture}
+		\begin{center}
+			\begin{tcolorbox}[colback=ucasblue!5!white,colframe=ucasblue!75!black,width=8cm]
+				\tableofcontents[currentsection]
+			\end{tcolorbox}
+		\end{center}
+	\end{frame}
+	\endgroup
+}
+
+% begin of subsections
+\AtBeginSubsection[]
+{
+	\begingroup
+	\begin{frame}{Contents}{}
+		\begin{picture}(0,0)
+			\put(-28.5,-143){\includegraphics[width=\paperwidth]{source/background1.png}}
+		\end{picture}
+		\begin{center}
+			\begin{tcolorbox}[colback=ucasblue!5!white,colframe=ucasblue!75!black,width=8cm]
+				\tableofcontents[currentsection,currentsubsection]
+			\end{tcolorbox}
+		\end{center}
+	\end{frame}
+	\endgroup
+}
