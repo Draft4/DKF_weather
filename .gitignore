@@ -5,14 +5,15 @@ __pycache__/
 dist/
 
 # Checkpoints / Model weights (large files)
-checkpoints/logs/
+**/checkpoints/logs/
 *.pth
 !**/best_model.pth
 
 # Data files (large)
 data/
 
-
+# Results (generated)
+results/
 
 # macOS
 .DS_Store
