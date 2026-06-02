@@ -7,7 +7,6 @@ dist/
 # Checkpoints / Model weights (large files)
 **/checkpoints/logs/
 *.pth
-!**/best_model.pth
 
 # Data files (large)
 data/

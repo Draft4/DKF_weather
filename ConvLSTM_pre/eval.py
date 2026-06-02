@@ -48,6 +48,9 @@ def init_metrics(n_future, thresholds):
         "sum_sq_error": 0.0,
         "sum_true": 0.0,
         "sum_pred": 0.0,
+        "sum_true_sq": 0.0,
+        "sum_pred_sq": 0.0,
+        "sum_true_pred": 0.0,
         "step_pixels": np.zeros(n_future, dtype=np.float64),
         "step_sum_error": np.zeros(n_future, dtype=np.float64),
         "step_sum_abs_error": np.zeros(n_future, dtype=np.float64),
@@ -67,6 +70,9 @@ def update_metrics(metrics, pred, target, thresholds):
     metrics["sum_sq_error"] += float((error * error).sum().item())
     metrics["sum_true"] += float(target.sum().item())
     metrics["sum_pred"] += float(pred.sum().item())
+    metrics["sum_true_sq"] += float((target * target).sum().item())
+    metrics["sum_pred_sq"] += float((pred * pred).sum().item())
+    metrics["sum_true_pred"] += float((target * pred).sum().item())
 
     step_pixels = pred[:, 0].numel()
     metrics["step_pixels"] += step_pixels
@@ -118,9 +124,22 @@ def finalize_threshold_scores(counts):
 
 
 def finalize_metrics(metrics):
-    pixels = metrics["pixels"]
-    mse = metrics["sum_sq_error"] / pixels
+    n = metrics["pixels"]
+    mse = metrics["sum_sq_error"] / n
+    mae = metrics["sum_abs_error"] / n
+    bias = metrics["sum_error"] / n
+    mean_true = metrics["sum_true"] / n
+    mean_pred = metrics["sum_pred"] / n
+
+    numerator = n * metrics["sum_true_pred"] - metrics["sum_true"] * metrics["sum_pred"]
+    true_var = n * metrics["sum_true_sq"] - metrics["sum_true"] ** 2
+    pred_var = n * metrics["sum_pred_sq"] - metrics["sum_pred"] ** 2
+    pearson_r = safe_div(numerator, math.sqrt(max(true_var * pred_var, 0.0)))
+
     step_mse = metrics["step_sum_sq_error"] / metrics["step_pixels"]
+    step_mae = metrics["step_sum_abs_error"] / metrics["step_pixels"]
+    step_bias = metrics["step_sum_error"] / metrics["step_pixels"]
+
     threshold_scores = {
         threshold: finalize_threshold_scores(counts)
         for threshold, counts in metrics["thresholds"].items()
@@ -128,14 +147,15 @@ def finalize_metrics(metrics):
     return {
         "MSE": mse,
         "RMSE": math.sqrt(mse),
-        "MAE": metrics["sum_abs_error"] / pixels,
-        "Bias": metrics["sum_error"] / pixels,
-        "Mean Obs": metrics["sum_true"] / pixels,
-        "Mean Pred": metrics["sum_pred"] / pixels,
+        "MAE": mae,
+        "Bias": bias,
+        "Mean Obs": mean_true,
+        "Mean Pred": mean_pred,
+        "Pearson r": pearson_r,
         "step_mse": step_mse,
         "step_rmse": np.sqrt(step_mse),
-        "step_mae": metrics["step_sum_abs_error"] / metrics["step_pixels"],
-        "step_bias": metrics["step_sum_error"] / metrics["step_pixels"],
+        "step_mae": step_mae,
+        "step_bias": step_bias,
         "threshold_scores": threshold_scores,
     }
 
@@ -156,6 +176,26 @@ def update_top_samples(top_samples, x_past, target, pred, args, sample_offset):
         )
     top_samples.sort(key=lambda item: item["score"], reverse=True)
     del top_samples[args.num_samples :]
+
+
+def update_scatter_store(store, target, pred, args, rng):
+    if len(store["true"]) >= args.scatter_points:
+        return
+
+    true_np = target.detach().cpu().numpy().reshape(-1)
+    pred_np = pred.detach().cpu().numpy().reshape(-1)
+    mask = (true_np >= args.scatter_threshold) | (pred_np >= args.scatter_threshold)
+    if mask.any():
+        true_np = true_np[mask]
+        pred_np = pred_np[mask]
+
+    needed = args.scatter_points - len(store["true"])
+    take = min(needed, len(true_np))
+    if take <= 0:
+        return
+    indices = rng.choice(len(true_np), size=take, replace=False)
+    store["true"].extend(true_np[indices].tolist())
+    store["pred"].extend(pred_np[indices].tolist())
 
 
 def figure_vmax(*arrays):
@@ -184,7 +224,7 @@ def save_sample_figure(sample, out_path):
     pred = sample["pred"].numpy()
     vmax = figure_vmax(past[past_indices], target[future_indices], pred[future_indices])
 
-    fig, axes = plt.subplots(3, 5, figsize=(7.1, 4.25))
+    fig, axes = plt.subplots(3, 5, figsize=(8.5, 4.5), constrained_layout=True)
     fig.suptitle(
         f"ConvLSTM Precipitation Forecast - Test Sample {sample['index']}",
         fontsize=11,
@@ -201,11 +241,10 @@ def save_sample_figure(sample, out_path):
     for row, label in enumerate(["History", "Observed", "Predicted"]):
         axes[row, 0].set_ylabel(label, fontsize=9, rotation=0, labelpad=34, va="center")
 
-    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.026, pad=0.018)
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.82, pad=0.02)
     cbar.set_label("Precipitation (mm/h)", fontsize=8)
     cbar.ax.tick_params(labelsize=7)
 
-    fig.tight_layout(rect=[0, 0, 0.96, 0.94])
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -258,6 +297,30 @@ def save_threshold_scores_plot(metrics, out_path):
     plt.close(fig)
 
 
+def save_scatter_plot(scatter_store, metrics, out_path):
+    true = np.asarray(scatter_store["true"], dtype=np.float32)
+    pred = np.asarray(scatter_store["pred"], dtype=np.float32)
+
+    fig, ax = plt.subplots(figsize=(6.0, 5.0))
+    if len(true) > 0:
+        max_val = max(float(true.max()), float(pred.max()), 1.0)
+        hb = ax.hexbin(true, pred, gridsize=65, mincnt=1, bins="log", cmap="viridis")
+        cbar = fig.colorbar(hb, ax=ax, fraction=0.045, pad=0.03)
+        cbar.set_label("log10(count)", fontsize=8)
+        cbar.ax.tick_params(labelsize=7)
+        ax.plot([0, max_val], [0, max_val], "r--", linewidth=1.2, label="1:1 line")
+        ax.set_xlim(0, max_val)
+        ax.set_ylim(0, max_val)
+    ax.set_xlabel("Observed precipitation (mm/h)")
+    ax.set_ylabel("Predicted precipitation (mm/h)")
+    ax.set_title(f"ConvLSTM Observed vs Predicted Rainfall (r={metrics['Pearson r']:.3f})")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper left")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def format_value(value):
     if isinstance(value, (float, np.floating)) and math.isnan(value):
         return "N/A"
@@ -279,7 +342,7 @@ def write_markdown(metrics, args, out_path):
         "| Metric | Value |",
         "|---|---:|",
     ]
-    for metric in ["MSE", "RMSE", "MAE", "Bias", "Mean Obs", "Mean Pred"]:
+    for metric in ["MSE", "RMSE", "MAE", "Bias", "Mean Obs", "Mean Pred", "Pearson r"]:
         lines.append(f"| {metric} | {format_value(metrics[metric])} |")
 
     lines.extend(
@@ -316,13 +379,28 @@ def write_markdown(metrics, args, out_path):
             f"{format_value(scores['Frequency Bias'])} | {format_value(scores['Accuracy'])} |"
         )
 
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    lines.extend(
+        [
+            "",
+            "## Notes",
+            "",
+            "- Continuous metrics are computed in the original precipitation scale after `expm1` inverse transformation.",
+            "- Bias is `prediction - observation`; negative values indicate underestimation.",
+            "- POD is probability of detection, FAR is false alarm ratio, and CSI is critical success index.",
+            "- Threshold scores are computed pixel-wise over all predicted future frames.",
+        ]
+    )
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def evaluate_model(model, test_loader, device, args):
     model.eval()
     metrics_acc = init_metrics(args.n_future, args.thresholds)
     top_samples = []
+    scatter_store = {"true": [], "pred": []}
+    rng = np.random.default_rng(42)
     sample_offset = 0
 
     with torch.no_grad():
@@ -335,10 +413,11 @@ def evaluate_model(model, test_loader, device, args):
             target = inverse_log_transform(y_future.squeeze(2))
 
             update_metrics(metrics_acc, pred, target, args.thresholds)
+            update_scatter_store(scatter_store, target, pred, args, rng)
             update_top_samples(top_samples, x_past, target, pred, args, sample_offset)
             sample_offset += x_past.size(0)
 
-    return finalize_metrics(metrics_acc), top_samples
+    return finalize_metrics(metrics_acc), top_samples, scatter_store
 
 
 def get_device():
@@ -385,6 +464,18 @@ def parse_args():
         nargs="+",
         default=[0.1, 2.0, 5.0, 10.0, 30.0],
     )
+    parser.add_argument(
+        "--scatter_points",
+        type=int,
+        default=50000,
+        help="Maximum number of points used in the observed-vs-predicted scatter plot.",
+    )
+    parser.add_argument(
+        "--scatter_threshold",
+        type=float,
+        default=0.1,
+        help="Keep scatter points where observed or predicted rain exceeds this value.",
+    )
     return parser.parse_args()
 
 
@@ -412,10 +503,10 @@ def main():
     model.load_state_dict(checkpoint["model_state_dict"])
     print(f"加载模型: {args.checkpoint}, Epoch: {checkpoint.get('epoch', 'N/A')}")
 
-    metrics, top_samples = evaluate_model(model, test_loader, device, args)
+    metrics, top_samples, scatter_store = evaluate_model(model, test_loader, device, args)
 
     print("\n=== ConvLSTM_pre Evaluation ===")
-    for metric in ["MSE", "RMSE", "MAE", "Bias", "Mean Obs", "Mean Pred"]:
+    for metric in ["MSE", "RMSE", "MAE", "Bias", "Mean Obs", "Mean Pred", "Pearson r"]:
         print(f"{metric}: {format_value(metrics[metric])}")
 
     metrics_path = os.path.join(args.save_dir, "metrics_summary.md")
@@ -423,6 +514,9 @@ def main():
     save_step_metrics_plot(metrics, os.path.join(args.save_dir, "step_metrics.png"))
     save_threshold_scores_plot(
         metrics, os.path.join(args.save_dir, "threshold_scores.png")
+    )
+    save_scatter_plot(
+        scatter_store, metrics, os.path.join(args.save_dir, "true_vs_pred_scatter.png")
     )
 
     for idx, sample in enumerate(top_samples):
