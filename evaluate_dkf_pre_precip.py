@@ -352,7 +352,7 @@ def save_sample_figure(sample, out_path):
     pred = sample["pred"].numpy()
     vmax = figure_vmax(past[past_indices], target[future_indices], pred[future_indices])
 
-    fig, axes = plt.subplots(3, 5, figsize=(7.1, 4.25))
+    fig, axes = plt.subplots(3, 5, figsize=(8.5, 4.5), constrained_layout=True)
     fig.suptitle(
         f"DKF Precipitation Forecast - Test Sample {sample['index']}",
         fontsize=11,
@@ -372,11 +372,10 @@ def save_sample_figure(sample, out_path):
     for row, label in enumerate(row_labels):
         axes[row, 0].set_ylabel(label, fontsize=9, rotation=0, labelpad=34, va="center")
 
-    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.026, pad=0.018)
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.82, pad=0.02)
     cbar.set_label("Precipitation (mm/h)", fontsize=8)
     cbar.ax.tick_params(labelsize=7)
 
-    fig.tight_layout(rect=[0, 0, 0.96, 0.94])
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -433,11 +432,11 @@ def save_scatter_plot(scatter_store, metrics, out_path):
     true = np.asarray(scatter_store["true"], dtype=np.float32)
     pred = np.asarray(scatter_store["pred"], dtype=np.float32)
 
-    fig, ax = plt.subplots(figsize=(5.2, 5.0))
+    fig, ax = plt.subplots(figsize=(6.0, 5.0))
     if len(true) > 0:
         max_val = max(float(true.max()), float(pred.max()), 1.0)
         hb = ax.hexbin(true, pred, gridsize=65, mincnt=1, bins="log", cmap="viridis")
-        fig.colorbar(hb, ax=ax, label="log10(count)")
+        cbar = fig.colorbar(hb, ax=ax, fraction=0.045, pad=0.03, label="log10(count)")
         ax.plot([0, max_val], [0, max_val], "r--", linewidth=1.2, label="1:1 line")
         ax.set_xlim(0, max_val)
         ax.set_ylim(0, max_val)
